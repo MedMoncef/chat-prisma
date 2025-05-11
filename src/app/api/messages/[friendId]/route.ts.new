@@ -1,0 +1,150 @@
+import { NextRequest } from 'next/server';
+import { prisma } from '@/lib/prisma';
+import { getUserFromCookie } from '@/lib/auth-helper';
+import { apiError, apiResponse } from '@/lib/api-utils';
+
+// Get messages between current user and another user
+export async function GET(
+  request: NextRequest,
+  { params }: { params: { friendId: string } }
+) {
+  try {
+    const userPayload = await getUserFromCookie();
+    
+    if (!userPayload || !userPayload.id) {
+      return apiError('Unauthorized', 401);
+    }
+    
+    const userId = userPayload.id as string;
+    const friendId = params.friendId;
+    
+    // Check if there's a friendship between users
+    const friendship = await prisma.friendship.findFirst({
+      where: {
+        OR: [
+          { requesterId: userId, addresseeId: friendId, status: 'ACCEPTED' },
+          { requesterId: friendId, addresseeId: userId, status: 'ACCEPTED' }
+        ]
+      }
+    });
+    
+    if (!friendship) {
+      return apiError('Not friends with this user', 403);
+    }
+    
+    // Find conversation
+    const conversation = await prisma.conversation.findFirst({
+      where: {
+        OR: [
+          { user1Id: userId, user2Id: friendId },
+          { user1Id: friendId, user2Id: userId }
+        ]
+      }
+    });
+    
+    if (!conversation) {
+      return apiResponse({ messages: [] });
+    }
+    
+    // Get messages
+    const messages = await prisma.message.findMany({
+      where: {
+        conversationId: conversation.id
+      },
+      orderBy: {
+        createdAt: 'asc'
+      },
+      include: {
+        sender: {
+          select: {
+            id: true,
+            name: true
+          }
+        }
+      }
+    });
+    
+    return apiResponse({ messages });
+  } catch (error) {
+    console.error('Error getting messages:', error);
+    return apiError('Failed to get messages', 500);
+  }
+}
+
+// Send a message
+export async function POST(
+  request: NextRequest,
+  { params }: { params: { friendId: string } }
+) {
+  try {
+    const userPayload = await getUserFromCookie();
+    
+    if (!userPayload || !userPayload.id) {
+      return apiError('Unauthorized', 401);
+    }
+    
+    const userId = userPayload.id as string;
+    const friendId = params.friendId;
+    
+    const { content } = await request.json();
+    
+    if (!content) {
+      return apiError('Message content is required', 400);
+    }
+    
+    // Check if there's a friendship between users
+    const friendship = await prisma.friendship.findFirst({
+      where: {
+        OR: [
+          { requesterId: userId, addresseeId: friendId, status: 'ACCEPTED' },
+          { requesterId: friendId, addresseeId: userId, status: 'ACCEPTED' }
+        ]
+      }
+    });
+    
+    if (!friendship) {
+      return apiError('Not friends with this user', 403);
+    }
+    
+    // Get or create conversation
+    let conversation = await prisma.conversation.findFirst({
+      where: {
+        OR: [
+          { user1Id: userId, user2Id: friendId },
+          { user1Id: friendId, user2Id: userId }
+        ]
+      }
+    });
+    
+    if (!conversation) {
+      conversation = await prisma.conversation.create({
+        data: {
+          user1Id: userId,
+          user2Id: friendId
+        }
+      });
+    }
+    
+    // Create message
+    const message = await prisma.message.create({
+      data: {
+        content,
+        senderId: userId,
+        conversationId: conversation.id
+      },
+      include: {
+        sender: {
+          select: {
+            id: true,
+            name: true
+          }
+        }
+      }
+    });
+    
+    return apiResponse({ message });
+  } catch (error) {
+    console.error('Error sending message:', error);
+    return apiError('Failed to send message', 500);
+  }
+}
