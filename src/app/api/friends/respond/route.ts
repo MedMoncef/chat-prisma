@@ -65,14 +65,32 @@ export async function PUT(request: NextRequest) {
       }
     });
     
-    // Create empty conversations if accepted
+    // Create empty conversation if accepted
     if (status === 'ACCEPTED') {
-      await prisma.conversation.create({
-        data: {
-          user1Id: userId,
-          user2Id: friendship.requester.id
+      // Check if a conversation already exists between these users
+      const existingConversation = await prisma.conversation.findFirst({
+        where: {
+          OR: [
+            {
+              user1Id: userId,
+              user2Id: friendship.requester.id
+            },
+            {
+              user1Id: friendship.requester.id,
+              user2Id: userId
+            }
+          ]
         }
       });
+      
+      if (!existingConversation) {
+        await prisma.conversation.create({
+          data: {
+            user1Id: userId,
+            user2Id: friendship.requester.id
+          }
+        });
+      }
     }
     
     return apiResponse({

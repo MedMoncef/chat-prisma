@@ -21,6 +21,8 @@ model User {
   receivedMessages Message[]    @relation("ReceivedMessages")
   sentFriendRequests    Friendship[] @relation("Requester")
   receivedFriendRequests Friendship[] @relation("Addressee")
+  conversationsAsUser1 Conversation[] @relation("ConversationUser1")
+  conversationsAsUser2 Conversation[] @relation("ConversationUser2")
 }
 
 model Message {
@@ -32,6 +34,8 @@ model Message {
   receiverId String
   sender    User     @relation("SentMessages", fields: [senderId], references: [id])
   receiver  User     @relation("ReceivedMessages", fields: [receiverId], references: [id])
+  conversationId String?
+  conversation Conversation? @relation(fields: [conversationId], references: [id])
 }
 
 model Friendship {
@@ -45,4 +49,17 @@ model Friendship {
   addressee   User     @relation("Addressee", fields: [addresseeId], references: [id])
 
   @@unique([requesterId, addresseeId])
+}
+
+model Conversation {
+  id        String   @id @default(uuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user1Id   String
+  user2Id   String
+  user1     User     @relation("ConversationUser1", fields: [user1Id], references: [id])
+  user2     User     @relation("ConversationUser2", fields: [user2Id], references: [id])
+  messages  Message[]
+
+  @@unique([user1Id, user2Id])
 }
